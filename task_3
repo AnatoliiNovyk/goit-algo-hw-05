@@ -1,0 +1,350 @@
+import timeit
+
+# --- Реалізація алгоритму Кнута-Морріса-Пратта (KMP) ---
+# З "Алгоритм Кнута-Морріса-Пратта.pdf"
+def compute_lps(pattern):
+    lps = [0] * len(pattern)
+    length = 0
+    i = 1
+    while i < len(pattern):
+        if pattern[i] == pattern[length]:
+            length += 1
+            lps[i] = length
+            i += 1
+        else:
+            if length != 0:
+                length = lps[length - 1]
+            else:
+                lps[i] = 0
+                i += 1
+    return lps
+
+def kmp_search(main_string, pattern):
+    M = len(pattern)
+    N = len(main_string)
+    if M == 0: return 0
+    if N == 0 or M > N : return -1
+    
+    lps = compute_lps(pattern)
+    
+    i = 0  # індекс для main_string
+    j = 0  # індекс для pattern
+    
+    while i < N:
+        if pattern[j] == main_string[i]:
+            i += 1
+            j += 1
+        
+        if j == M:
+            return i - j # Повертаємо індекс першого входження
+        elif i < N and pattern[j] != main_string[i]:
+            if j != 0:
+                j = lps[j - 1]
+            else:
+                i += 1
+    return -1 # Підрядок не знайдено
+
+# --- Реалізація алгоритму Боєра-Мура (BM) ---
+# З "Алгоритм Боєра-Мура.pdf"
+def build_shift_table(pattern):
+    table = {}
+    length = len(pattern)
+    # Для кожного символу в підрядку (крім останнього) встановлюємо зсув
+    for index, char in enumerate(pattern[:-1]): # [cite: 318]
+        table[char] = length - 1 - index # [cite: 320]
+    # Якщо останнього символу немає в таблиці, зсув буде дорівнювати довжині підрядка [cite: 318]
+    # Або якщо він є, але це його останнє входження, то зсув на довжину підрядка
+    # (для символів, що не входять в алфавіт паттерну, але зустрічаються в тексті)
+    table.setdefault(pattern[-1], length) # [cite: 318]
+    return table
+
+# Спрощена реалізація Боєра-Мура для тестування (з лекції)
+def boyer_moore_search_v2(text, pattern):
+    m = len(pattern)
+    n = len(text)
+    if m > n: return -1
+    if m == 0: return 0
+
+    shift_table = build_shift_table(pattern)
+
+    s = 0 # Зсув паттерна відносно тексту
+    while s <= n - m:
+        j = m - 1 # Індекс для паттерна, починаємо з кінця
+        while j >= 0 and pattern[j] == text[s + j]:
+            j -= 1
+        
+        if j < 0: # Знайдено
+            return s
+            # Для пошуку всіх входжень:
+            # s += (m - shift_table.get(text[s + m - 1], 0) if s + m < n else 1) 
+        else:
+            # Зсув на основі символу text[s+j], де відбулась невідповідність.
+            # Використовуємо зсув з таблиці для символу text[s+j].
+            # Якщо символу немає в таблиці, зсув на довжину паттерну m.
+            # Таблиця зсувів, яку ми будуємо (build_shift_table), містить:
+            # table[char] = довжина_патерну - 1 - індекс_останнього_входження_char_в_pattern[:-1]
+            # table.setdefault(pattern[-1], довжина_патерну)
+            # Ця таблиця призначена для зсуву на основі символу в тексті, що *вирівняний з останнім символом патерну*.
+            # Коли невідповідність на pattern[j] vs text[s+j], класичний зсув "поганого символу"
+            # це max(1, j - позиція_останнього_входження_text[s+j]_в_pattern[0...j-1])
+            # Для простоти і відповідності до того, як часто пояснюють базовий BM,
+            # зсунемо на основі text[s+m-1] (останній символ поточного вікна тексту).
+            
+            char_to_shift_by_in_text = text[s + m - 1] # Символ в тексті, що відповідає останньому символу патерну
+            shift_val = shift_table.get(char_to_shift_by_in_text, m)
+            s += shift_val
+            
+            # Важливо: Цей зсув є спрощеною версією. 
+            # Більш точний зсув "поганого символу" залежить від text[s+j].
+            # Наприклад: s += max(1, j - (m - 1 - shift_table.get(text[s+j], m))) - якщо таблиця зберігає індекс.
+            # Або просто: s += 1, для найпростішого, але неефективного варіанту.
+            # Поточний зсув `s += shift_val` є одним з поширених спрощень.
+    return -1
+
+
+# --- Реалізація алгоритму Рабіна-Карпа (RK) ---
+# З "Алгоритм Рабіна-Карпа.pdf"
+def polynomial_hash(s, base, modulus):
+    n = len(s)
+    hash_value = 0
+    for i in range(n):
+        hash_value = (hash_value * base + ord(s[i])) % modulus
+    return hash_value
+
+def rabin_karp_search(main_string, substring):
+    n = len(main_string)
+    m = len(substring)
+
+    if m == 0: return 0
+    if n == 0 or m > n: return -1
+
+    base = 256
+    modulus = 101 
+
+    substring_hash = polynomial_hash(substring, base, modulus)
+    current_slice_hash = polynomial_hash(main_string[:m], base, modulus)
+
+    h_multiplier = pow(base, m - 1, modulus) # [cite: 369]
+
+    for i in range(n - m + 1):
+        if substring_hash == current_slice_hash:
+            if main_string[i:i+m] == substring:
+                return i 
+
+        if i < n - m:
+            current_slice_hash = (current_slice_hash - ord(main_string[i]) * h_multiplier) % modulus # [cite: 380]
+            current_slice_hash = (current_slice_hash * base + ord(main_string[i+m])) % modulus # [cite: 380]
+            if current_slice_hash < 0: 
+                current_slice_hash += modulus
+    return -1
+
+
+# Функція для читання файлу
+def read_file(filepath):
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # print(f"Файл {filepath} успішно прочитано з кодуванням UTF-8.")
+            return content
+    except UnicodeDecodeError:
+        # print(f"Не вдалося прочитати {filepath} з UTF-8. Спроба з CP1251...")
+        try:
+            with open(filepath, 'r', encoding='cp1251') as f:
+                content = f.read()
+                # print(f"Файл {filepath} успішно прочитано з кодуванням CP1251.")
+                return content
+        except Exception as e_cp1251:
+            print(f"Не вдалося прочитати файл {filepath} ні з UTF-8, ні з CP1251. Помилка CP1251: {e_cp1251}")
+            return ""
+    except FileNotFoundError:
+        print(f"Файл {filepath} не знайдено.")
+        return ""
+    except Exception as e:
+        print(f"Загальна помилка при читанні файлу {filepath}: {e}")
+        return ""
+
+# Завантаження текстів
+text1_content = read_file("стаття 1.txt")
+text2_content = read_file("стаття 2.txt")
+
+# Визначення підрядків для пошуку
+# Для статті 1
+pattern1_existing = "алгоритм" 
+pattern1_fictional = "вигаданийпідрядок123" 
+
+# Для статті 2
+pattern2_existing = "рекомендаційної системи" 
+pattern2_fictional = "фантастичнийтекстXYZ"
+
+search_algorithms = {
+    "KMP": kmp_search,
+    "Boyer-Moore": boyer_moore_search_v2,
+    "Rabin-Karp": rabin_karp_search
+}
+
+datasets = {
+    "Стаття 1": {
+        "text": text1_content,
+        "patterns": {
+            "існуючий ('алгоритм')": pattern1_existing,
+            "вигаданий ('вигаданийпідрядок123')": pattern1_fictional
+        }
+    },
+    "Стаття 2": {
+        "text": text2_content,
+        "patterns": {
+            "існуючий ('рекомендаційної системи')": pattern2_existing,
+            "вигаданий ('фантастичнийтекстXYZ')": pattern2_fictional
+        }
+    }
+}
+
+results = {}
+number_of_runs = 100 
+
+if not text1_content and not text2_content: # Перевіряємо, чи хоча б один текст завантажено
+    print("Не вдалося завантажити тексти статей або вони порожні. Порівняння неможливе.")
+else:
+    for text_name, data in datasets.items():
+        print(f"\n--- Обробка тексту: {text_name} ---")
+        results[text_name] = {}
+        current_text = data["text"]
+        if not current_text: # Додаткова перевірка на порожній текст
+            print(f"Текст '{text_name}' порожній. Пропуск.")
+            continue
+            
+        for pattern_desc, current_pattern in data["patterns"].items():
+            print(f"  Пошук підрядка ({pattern_desc}), довжина {len(current_pattern)}:")
+            results[text_name][pattern_desc] = {}
+            if not current_pattern:
+                print("    Порожній підрядок. Пропуск.")
+                continue
+
+            for algo_name, search_function in search_algorithms.items():
+                # Формуємо setup_code динамічно, щоб уникнути імпорту всього підряд в timeit
+                setup_parts = [f"from __main__ import {search_function.__name__}, current_text, current_pattern"]
+                if algo_name == "KMP":
+                    setup_parts.append("from __main__ import compute_lps")
+                elif algo_name == "Boyer-Moore":
+                    setup_parts.append("from __main__ import build_shift_table")
+                elif algo_name == "Rabin-Karp":
+                     setup_parts.append("from __main__ import polynomial_hash")
+                
+                setup_code_final = "\n".join(setup_parts)
+                
+                # Передаємо функції глобально в timeit, щоб уникнути проблем з __main__
+                # та забезпечити доступність всіх необхідних функцій
+                timeit_globals = {
+                    'current_text': current_text, 
+                    'current_pattern': current_pattern,
+                    search_function.__name__: search_function # Головна функція пошуку
+                }
+                # Додаємо допоміжні функції, якщо вони потрібні
+                if algo_name == "KMP":
+                    timeit_globals['compute_lps'] = compute_lps
+                elif algo_name == "Boyer-Moore":
+                    timeit_globals['build_shift_table'] = build_shift_table
+                elif algo_name == "Rabin-Karp":
+                    timeit_globals['polynomial_hash'] = polynomial_hash
+
+
+                try:
+                    time_taken = timeit.timeit(
+                        f"{search_function.__name__}(current_text, current_pattern)",
+                        setup=setup_code_final, # Це може не знадобитися, якщо globals працює коректно
+                        globals=timeit_globals,
+                        number=number_of_runs
+                    )
+                    avg_time = time_taken / number_of_runs
+                    results[text_name][pattern_desc][algo_name] = avg_time
+                    print(f"    Час для {algo_name}: {avg_time:.6f} секунд (середнє з {number_of_runs} запусків)")
+                except Exception as e:
+                    print(f"    Помилка при виконанні {algo_name} для '{pattern_desc}' в '{text_name}': {e}")
+                    results[text_name][pattern_desc][algo_name] = float('inf') 
+
+
+# Формування звіту у Markdown
+md_report = "# Звіт про ефективність алгоритмів пошуку підрядка\n\n"
+
+# Перевіряємо, чи є результати перед формуванням звіту
+if results and any(results.values()): # Перевірка, що results не порожній і містить дані
+    for text_name, pattern_results in results.items():
+        md_report += f"## {text_name}\n\n"
+        
+        text_to_analyze = datasets.get(text_name, {}).get("text", "")
+        text_len = len(text_to_analyze)
+        md_report += f"Довжина тексту: {text_len} символів.\n\n"
+        
+        md_report += "| Тип підрядка                       | Алгоритм      | Час виконання (сек) |\n"
+        md_report += "|------------------------------------|---------------|---------------------|\n"
+        for pattern_desc, algo_times in pattern_results.items():
+            
+            current_pattern_str = datasets.get(text_name, {}).get("patterns", {}).get(pattern_desc, "")
+            pattern_len = len(current_pattern_str)
+            
+            sorted_algo_times = sorted(algo_times.items(), key=lambda item: item[1])
+            
+            first_entry = True
+            for algo_name, time_taken in sorted_algo_times:
+                pattern_display_name = f"{pattern_desc} (довжина: {pattern_len})"
+                if first_entry:
+                    md_report += f"| {pattern_display_name:<34} | {algo_name:<13} | {time_taken:<19.6f} |\n"
+                    first_entry = False
+                else:
+                    md_report += f"| {'':<34} | {algo_name:<13} | {time_taken:<19.6f} |\n"
+        md_report += "\n"
+
+    md_report += "## Висновки\n\n"
+
+    overall_fastest_algo_counts = {} 
+
+    for text_name, pattern_results in results.items():
+        fastest_in_text_total_time = {} # {algo: total_time_for_this_text}
+        md_report += f"### Для тексту '{text_name}':\n"
+        for pattern_desc, algo_times in pattern_results.items():
+            if not algo_times: continue
+            
+            valid_algo_times = {k: v for k, v in algo_times.items() if v != float('inf')}
+            if not valid_algo_times:
+                md_report += f"- Для підрядка '{pattern_desc}': не вдалося визначити найшвидший (можливо, через помилки).\n"
+                continue
+
+            best_algo_for_pattern = min(valid_algo_times, key=valid_algo_times.get)
+            best_time_for_pattern = valid_algo_times[best_algo_for_pattern]
+            md_report += f"- Для підрядка '{pattern_desc}': найшвидший **{best_algo_for_pattern}** ({best_time_for_pattern:.6f} сек).\n"
+            
+            for algo, time_val in algo_times.items():
+                if time_val != float('inf'):
+                    fastest_in_text_total_time[algo] = fastest_in_text_total_time.get(algo, 0) + time_val
+        
+        if fastest_in_text_total_time:
+            overall_best_for_text_algo = min(fastest_in_text_total_time, key=fastest_in_text_total_time.get)
+            md_report += f"  - **Загалом для '{text_name}'**: найефективнішим (за сумою часу для існуючого та вигаданого підрядків) виявився **{overall_best_for_text_algo}**.\n\n"
+            
+            overall_fastest_algo_counts[overall_best_for_text_algo] = overall_fastest_algo_counts.get(overall_best_for_text_algo, 0) + 1
+
+
+    md_report += "### Загальні висновки по всім текстам:\n"
+    if overall_fastest_algo_counts:
+        sorted_overall_fastest = sorted(overall_fastest_algo_counts.items(), key=lambda item: item[1], reverse=True)
+        md_report += "Рейтинг алгоритмів за частотою найкращих сукупних результатів по текстах:\n"
+        for i, (algo, count) in enumerate(sorted_overall_fastest):
+             md_report += f"{i+1}. **{algo}** (був найшвидшим за сумою часу в {count} тексті/текстах)\n"
+    else:
+        md_report += "Не вдалося визначити загальний рейтинг через відсутність даних або помилки.\n"
+
+    md_report += "\n**Детальний аналіз:**\n"
+    md_report += "- **Алгоритм Кнута-Морріса-Пратта (KMP)**: Має хорошу теоретичну складність $O(N+M)$. Його продуктивність стабільна і не сильно залежить від вмісту тексту та підрядка. Він ефективний, особливо коли алфавіт великий або підрядок має повторювані частини.\n"
+    md_report += "- **Алгоритм Боєра-Мура (BM)**: Часто є найшвидшим на практиці для великих алфавітів та довгих підрядків, оскільки дозволяє пропускати значні частини тексту. Його ефективність може знижуватись на коротких алфавітах або якщо підрядок дуже короткий. *У нашому тестуванні використовувалась спрощена версія BM, що може вплинути на його відносну продуктивність.*\n"
+    md_report += "- **Алгоритм Рабіна-Карпа (RK)**: Продуктивність залежить від обраної хеш-функції, модуля та базового числа. У середньому показує $O(N+M)$, але в найгіршому випадку (через колізії) може деградувати до $O(NM)$. Ефективний для пошуку множинних патернів.\n\n"
+    md_report += "Конкретні результати залежать від характеристик текстів (довжина, алфавіт) та підрядків (довжина, наявність у тексті). "
+    md_report += "Для вигаданих підрядків алгоритми, що швидко відкидають невідповідності (як BM), можуть показувати кращі результати. "
+    md_report += "Для існуючих підрядків різниця може бути менш помітною, якщо вони знаходяться на початку тексту.\n"
+
+else: # Якщо results порожній або не містить даних
+    md_report += "## Результати відсутні\n\n"
+    md_report += "Не вдалося отримати результати вимірювань. Можливо, файли статей не були завантажені або виникли інші помилки під час виконання.\n"
+
+
+print("\n\n--- Markdown Звіт ---")
+print(md_report)
